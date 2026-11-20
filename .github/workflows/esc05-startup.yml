@@ -1,0 +1,12 @@
+name: ESC05 Windows startup
+on:
+  push:
+    branches:
+      - esc05-cp01-windows-20261120
+jobs:
+  check:
+    runs-on: windows-latest
+    steps:
+      - name: Confirm Windows job startup
+        shell: pwsh
+        run: Write-Output "ESC05_RUNNER_OK"
