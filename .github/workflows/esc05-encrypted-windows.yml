@@ -1,0 +1,47 @@
+name: ESC05 encrypted Windows validation
+on:
+  push:
+    branches:
+      - esc05-cp01-windows-20261120
+jobs:
+  validate:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '11.0.100'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install decryption dependency
+        shell: pwsh
+        run: python -m pip install --quiet cryptography
+      - name: Execute encrypted owned fixture
+        shell: pwsh
+        env:
+          ESC05_KEY: ${{ secrets.ESC05_KEY }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not $env:ESC05_KEY) { throw 'ESC05_SETUP_MISSING' }
+          $out = Join-Path $env:RUNNER_TEMP 'esc05-owned-fixture'
+          New-Item -ItemType Directory -Path $out | Out-Null
+          python decrypt.py esc05.enc $out
+          if ($LASTEXITCODE -ne 0) { throw 'ESC05_DECRYPT_FAIL' }
+          Push-Location $out
+          try {
+            $dotnet = (Get-Command dotnet).Source
+            $version = (dotnet --version).Trim()
+            if ($version -ne '11.0.100') { throw 'ESC05_SDK_VERSION_FAIL' }
+            $runtimes = dotnet --list-runtimes | Out-String
+            if ($runtimes -notmatch 'Microsoft.AspNetCore.App 11\.0\.0 ') { throw 'ESC05_RUNTIME_VERSION_FAIL' }
+            $env:ESC05_DOTNET = $dotnet
+            dotnet build -c Release -p:RestoreIgnoreFailedSources=true *> build-private.log
+            if ($LASTEXITCODE -ne 0) { throw 'ESC05_BUILD_FAIL' }
+            python run.py *> run-private.log
+            if ($LASTEXITCODE -ne 0) { throw 'ESC05_TEST_FAIL' }
+            Write-Output 'ESC05_PASS'
+          } finally {
+            Pop-Location
+            Remove-Item -Recurse -Force $out
+          }
